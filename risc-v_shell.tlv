@@ -28,7 +28,7 @@
    m4_asm(ADDI, x13, x13, 1)            // Increment loop count by 1
    m4_asm(BLT, x13, x12, 1111111111000) // If a3 is less than a2, branch to label named <loop>
    // Test result value in x14, and set x31 to reflect pass/fail.
-   m4_asm(ADDI, x0, x0, 1) // added to demenstrate if x0 is writable (it should always be 0 in riscv)
+   //m4_asm(ADDI, x0, x0, 1) // added to demenstrate if x0 is writable (it should always be 0 in riscv)
    m4_asm(ADDI, x30, x14, 111111010100) // Subtract expected value of 44 to set x30 to 1 if and only iff the result is 45 (1 + 2 + ... + 9).
    m4_asm(BGE, x0, x0, 0) // Done. Jump to itself (infinite loop). (Up to 20-bit signed immediate plus implicit 0 bit (unlike JALR) provides byte address; last immediate bit should also be 0)
    m4_asm_end()
@@ -45,7 +45,9 @@
    $reset = *reset;
    
    //// Program Counter
-   $next_pc[31:0] = $reset ? 32'h0 : ($pc + 32'd4);
+   $next_pc[31:0] = $reset ? 32'h0 :
+                    $taken_br ? $br_tgt_pc :
+                    ($pc + 32'd4);
    $pc[31:0] = >>1$next_pc;
    
    //// Instruction Memory
@@ -56,11 +58,11 @@
    $is_u_instr = $instr[6:2] ==? 5'bxx101;
    
    $is_i_instr = $instr[6:2] ==? 5'b0000x ||
-                 $instr[6:2] ==?  5'b001x0 ||
+                 $instr[6:2] ==? 5'b001x0 ||
                  $instr[6:2] ==  5'b11001;
    
    $is_r_instr = $instr[6:2] ==? 5'b011x0 ||
-                 $instr[6:2] ==  5'b01011  ||
+                 $instr[6:2] ==  5'b01011 ||
                  $instr[6:2] ==  5'b10100;
    
    $is_s_instr = $instr[6:2] ==? 5'b0100x;
@@ -69,9 +71,9 @@
    
    // Extract fields
    $funct3[2:0] = $instr[14:12];
-   $rs1[4:0] = $instr[19:15];
-   $rs2[4:0] = $instr[24:20];
-   $rd[4:0] = $instr[11:7];
+   $rs1[4:0]    = $instr[19:15];
+   $rs2[4:0]    = $instr[24:20];
+   $rd[4:0]     = $instr[11:7];
    $opcode[6:0] = $instr[6:0];
    // $funct7[6:0] = $instr[31:25] // not used here
    
@@ -110,16 +112,21 @@
    
    $is_add = $dec_bits == 11'b0_000_0110011;
    
-   // Assert these to end simulation (before Makerchip cycle limit).
-   *passed = 1'b0;
+   m4+tb()
    *failed = *cyc_cnt > M4_MAX_CYC;
    
    //// ALU
    $result[31:0] = $is_addi ? $src1_value + $imm :
                    $is_add  ? $src1_value + $src2_value :
                    32'b0; // default
-   //// Branch
-   $taken_br = $
+   $taken_br = $is_beq ? $src1_value == $src2_value :
+               $is_bne ? $src1_value != $src2_value :
+               $is_blt ? $src1_value < $src2_value  :
+               $is_bge ? $src1_value >= $src2_value :
+               $is_bltu ? $src1_value < $src2_value :
+               $is_bgeu ? $src1_value >= $src2_value :
+                          1'b0; //default. 
+   $br_tgt_pc[31:0] = $pc + $imm;
    
    //// Register File Read
    // I think this may need rd signal somewhere
